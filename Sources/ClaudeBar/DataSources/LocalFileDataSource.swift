@@ -5,16 +5,19 @@ import Foundation
 // Claude Code writes one .jsonl file per session inside:
 //   ~/.claude/projects/<project-slug>/<session-uuid>.jsonl
 //
-// Each line is a JSON object. We care about lines where:
-//   type == "assistant" AND message.usage exists
+// The project-slug is the project's file path with each "/" replaced by "-".
+// For example, a project at /Users/you/dev/myapp gets the slug:
+//   -Users-you-dev-myapp
 //
-// Those lines contain real token counts (input, output, cache) and a timestamp.
+// When an account has a pathFilter set (e.g. "/Users/you/dev"), only project
+// directories whose slug starts with the equivalent prefix ("-Users-you-dev")
+// are included. This lets you separate personal and work usage.
 struct LocalFileDataSource {
 
-    // Parses all JSONL files under `projectsPath` and returns aggregated usage.
+    private let claudeProjectsRoot = NSHomeDirectory() + "/.claude/projects"
+
     func fetch(account: Account) async throws -> LocalFileUsage {
-        let projectsPath = account.claudeProjectsPath
-        let records = try parseAllJSONLFiles(in: projectsPath)
+        let records = try parseAllJSONLFiles(pathFilter: account.pathFilter)
 
         let now = Date()
         let cutoff5h  = TimeWindow.last5Hours(from: now)
@@ -24,30 +27,20 @@ struct LocalFileDataSource {
         var usage5h   = TokenUsage()
         var usage24h  = TokenUsage()
         var usage7d   = TokenUsage()
-        var breakdown: [String: TokenUsage] = [:]  // per model, all time in 7-day window
+        var breakdown: [String: TokenUsage] = [:]
         var lastActivity: Date? = nil
 
         for record in records {
-            // Track the most recent message
             if lastActivity == nil || record.timestamp > lastActivity! {
                 lastActivity = record.timestamp
             }
-
-            // Accumulate into whichever windows this record falls within
-            if record.timestamp > cutoff5h {
-                usage5h += record.usage
-            }
-            if record.timestamp > cutoff24h {
-                usage24h += record.usage
-            }
-            if record.timestamp > cutoff7d {
+            if record.timestamp > cutoff5h  { usage5h  += record.usage }
+            if record.timestamp > cutoff24h { usage24h += record.usage }
+            if record.timestamp > cutoff7d  {
                 usage7d += record.usage
-                // Also update the per-model breakdown (7-day window only)
                 breakdown[record.model, default: TokenUsage()] += record.usage
             }
         }
-
-        let estimatedCost = TokenCostEstimator.estimateTotal(breakdown)
 
         return LocalFileUsage(
             accountId: account.id,
@@ -56,51 +49,66 @@ struct LocalFileDataSource {
             last7Days: usage7d,
             lastActivity: lastActivity,
             modelBreakdown: breakdown,
-            estimatedCostUSD: estimatedCost,
+            estimatedCostUSD: TokenCostEstimator.estimateTotal(breakdown),
             refreshedAt: now
         )
     }
 
     // MARK: - Private parsing
 
-    // Finds all .jsonl files recursively and parses them into UsageRecord objects.
-    // This is a regular (non-async) function because FileManager and file reads are synchronous.
-    private func parseAllJSONLFiles(in directory: String) throws -> [UsageRecord] {
+    // Returns all JSONL project directories, optionally filtered to a path prefix.
+    private func parseAllJSONLFiles(pathFilter: String?) throws -> [UsageRecord] {
         let fm = FileManager.default
-        guard fm.fileExists(atPath: directory) else {
-            throw LocalFileError.directoryNotFound(directory)
+        guard fm.fileExists(atPath: claudeProjectsRoot) else {
+            throw LocalFileError.directoryNotFound(claudeProjectsRoot)
         }
 
-        // Collect all .jsonl file URLs first (synchronous enumeration)
-        guard let enumerator = fm.enumerator(
-            at: URL(filePath: directory),
-            includingPropertiesForKeys: nil
-        ) else {
-            throw LocalFileError.directoryNotFound(directory)
+        // Convert the user-supplied path filter to the slug prefix Claude uses.
+        // "/Users/you/dev" → "-Users-you-dev"
+        let slugPrefix: String? = pathFilter.map { path in
+            path.replacingOccurrences(of: "/", with: "-")
         }
 
-        var jsonlFiles: [URL] = []
-        for case let fileURL as URL in enumerator {
-            if fileURL.pathExtension == "jsonl" {
-                jsonlFiles.append(fileURL)
+        // List top-level project directories, applying the slug filter if set.
+        let projectDirs: [URL]
+        do {
+            projectDirs = try fm.contentsOfDirectory(
+                at: URL(filePath: claudeProjectsRoot),
+                includingPropertiesForKeys: [.isDirectoryKey]
+            ).filter { url in
+                var isDir: ObjCBool = false
+                fm.fileExists(atPath: url.path, isDirectory: &isDir)
+                guard isDir.boolValue else { return false }
+                // If a filter is set, only include directories whose name starts with the prefix.
+                if let prefix = slugPrefix {
+                    return url.lastPathComponent.hasPrefix(prefix)
+                }
+                return true
             }
+        } catch {
+            throw LocalFileError.directoryNotFound(claudeProjectsRoot)
         }
 
+        // Scan each project directory for .jsonl files.
         var allRecords: [UsageRecord] = []
-        for fileURL in jsonlFiles {
-            let fileRecords = try parseJSONLFile(at: fileURL)
-            allRecords.append(contentsOf: fileRecords)
+        for projectDir in projectDirs {
+            guard let enumerator = fm.enumerator(at: projectDir, includingPropertiesForKeys: nil)
+            else { continue }
+
+            var jsonlFiles: [URL] = []
+            for case let fileURL as URL in enumerator {
+                if fileURL.pathExtension == "jsonl" { jsonlFiles.append(fileURL) }
+            }
+            for fileURL in jsonlFiles {
+                allRecords.append(contentsOf: (try? parseJSONLFile(at: fileURL)) ?? [])
+            }
         }
 
         return allRecords
     }
 
-    // Reads a single .jsonl file line by line and extracts assistant usage records.
-    // Reads line-by-line to avoid loading large files into memory all at once.
     private func parseJSONLFile(at url: URL) throws -> [UsageRecord] {
-        guard let fileHandle = FileHandle(forReadingAtPath: url.path) else {
-            return []  // Skip unreadable files rather than failing
-        }
+        guard let fileHandle = FileHandle(forReadingAtPath: url.path) else { return [] }
         defer { fileHandle.closeFile() }
 
         let data = fileHandle.readDataToEndOfFile()
@@ -111,8 +119,6 @@ struct LocalFileDataSource {
 
         for line in content.split(separator: "\n", omittingEmptySubsequences: true) {
             guard let lineData = String(line).data(using: .utf8) else { continue }
-
-            // Only try to decode assistant messages; skip everything else
             guard let raw = try? decoder.decode(RawJSONLLine.self, from: lineData),
                   raw.type == "assistant",
                   let usage = raw.message?.usage,
@@ -120,32 +126,29 @@ struct LocalFileDataSource {
                   let timestamp = iso8601Formatter.date(from: timestampString)
             else { continue }
 
-            let model = raw.message?.model ?? "unknown"
-            let tokenUsage = TokenUsage(
-                inputTokens:         usage.input_tokens,
-                outputTokens:        usage.output_tokens,
-                cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
-                cacheReadTokens:     usage.cache_read_input_tokens ?? 0
-            )
-
-            records.append(UsageRecord(timestamp: timestamp, model: model, usage: tokenUsage))
+            records.append(UsageRecord(
+                timestamp: timestamp,
+                model: raw.message?.model ?? "unknown",
+                usage: TokenUsage(
+                    inputTokens:         usage.input_tokens,
+                    outputTokens:        usage.output_tokens,
+                    cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
+                    cacheReadTokens:     usage.cache_read_input_tokens ?? 0
+                )
+            ))
         }
-
         return records
     }
 }
 
 // MARK: - Internal types
 
-// One parsed assistant message from a JSONL file.
 private struct UsageRecord {
     let timestamp: Date
     let model: String
     let usage: TokenUsage
 }
 
-// Mirrors the shape of a line in Claude Code's JSONL files.
-// Using optional fields because not all lines have all fields.
 private struct RawJSONLLine: Decodable {
     let type: String
     let timestamp: String?

@@ -11,23 +11,21 @@ enum AccountUsage {
 }
 
 // Usage data parsed from local ~/.claude/projects/**/*.jsonl files.
-// Covers Claude Code / Pro accounts.
 struct LocalFileUsage {
     let accountId: UUID
-    let last5Hours: TokenUsage      // The rolling 5-hour rate-limit window for Pro
+    let last5Hours: TokenUsage          // Rolling 5-hour rate-limit window (Pro)
     let last24Hours: TokenUsage
     let last7Days: TokenUsage
-    let lastActivity: Date?         // Timestamp of the most recent assistant message
-    let modelBreakdown: [String: TokenUsage]  // e.g. ["claude-sonnet-4-6": ...]
-    let estimatedCostUSD: Double
+    let thisMonth: TokenUsage           // Current calendar month
+    let lastActivity: Date?
+    let modelBreakdown: [String: TokenUsage]    // per model, this month
+    let projectBreakdown: [String: TokenUsage]  // per project slug, this month
+    let estimatedCostUSD: Double                // based on thisMonth
     let refreshedAt: Date
 
-    // Time remaining until the 5-hour window resets from the first message in it
     func timeUntil5HourReset() -> TimeInterval? {
         guard let last = lastActivity else { return nil }
-        let windowStart = last.addingTimeInterval(-5 * 3600)
-        let resetAt = windowStart.addingTimeInterval(5 * 3600)
-        let remaining = resetAt.timeIntervalSinceNow
+        let remaining = last.addingTimeInterval(5 * 3600).timeIntervalSinceNow
         return remaining > 0 ? remaining : nil
     }
 }

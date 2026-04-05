@@ -6,12 +6,7 @@ import Foundation
 //   ~/.claude/projects/<project-slug>/<session-uuid>.jsonl
 //
 // The project-slug is the project's file path with each "/" replaced by "-".
-// For example, a project at /Users/you/dev/myapp gets the slug:
-//   -Users-you-dev-myapp
-//
-// When an account has a pathFilter set (e.g. "/Users/you/dev"), only project
-// directories whose slug starts with the equivalent prefix ("-Users-you-dev")
-// are included. This lets you separate personal and work usage.
+// Records are tagged with their project slug so we can break down spend by project.
 struct LocalFileDataSource {
 
     private let claudeProjectsRoot = NSHomeDirectory() + "/.claude/projects"
@@ -20,25 +15,30 @@ struct LocalFileDataSource {
         let records = try parseAllJSONLFiles(includedSlugs: account.includedProjectSlugs)
 
         let now = Date()
-        let cutoff5h  = TimeWindow.last5Hours(from: now)
-        let cutoff24h = TimeWindow.last24Hours(from: now)
-        let cutoff7d  = TimeWindow.last7Days(from: now)
+        let cutoff5h    = TimeWindow.last5Hours(from: now)
+        let cutoff24h   = TimeWindow.last24Hours(from: now)
+        let cutoff7d    = TimeWindow.last7Days(from: now)
+        let cutoffMonth = startOfCurrentMonth()
 
-        var usage5h   = TokenUsage()
-        var usage24h  = TokenUsage()
-        var usage7d   = TokenUsage()
-        var breakdown: [String: TokenUsage] = [:]
+        var usage5h    = TokenUsage()
+        var usage24h   = TokenUsage()
+        var usage7d    = TokenUsage()
+        var usageMonth = TokenUsage()
+        var modelBreakdown:   [String: TokenUsage] = [:]
+        var projectBreakdown: [String: TokenUsage] = [:]
         var lastActivity: Date? = nil
 
         for record in records {
             if lastActivity == nil || record.timestamp > lastActivity! {
                 lastActivity = record.timestamp
             }
-            if record.timestamp > cutoff5h  { usage5h  += record.usage }
-            if record.timestamp > cutoff24h { usage24h += record.usage }
-            if record.timestamp > cutoff7d  {
-                usage7d += record.usage
-                breakdown[record.model, default: TokenUsage()] += record.usage
+            if record.timestamp > cutoff5h    { usage5h    += record.usage }
+            if record.timestamp > cutoff24h   { usage24h   += record.usage }
+            if record.timestamp > cutoff7d    { usage7d    += record.usage }
+            if record.timestamp > cutoffMonth {
+                usageMonth += record.usage
+                modelBreakdown[record.model, default: TokenUsage()] += record.usage
+                projectBreakdown[record.projectSlug, default: TokenUsage()] += record.usage
             }
         }
 
@@ -47,23 +47,24 @@ struct LocalFileDataSource {
             last5Hours: usage5h,
             last24Hours: usage24h,
             last7Days: usage7d,
+            thisMonth: usageMonth,
             lastActivity: lastActivity,
-            modelBreakdown: breakdown,
-            estimatedCostUSD: TokenCostEstimator.estimateTotal(breakdown),
+            modelBreakdown: modelBreakdown,
+            projectBreakdown: projectBreakdown,
+            estimatedCostUSD: TokenCostEstimator.estimateTotal(modelBreakdown),
             refreshedAt: now
         )
     }
 
     // MARK: - Private parsing
 
-    // Scans ~/.claude/projects/, optionally limited to a specific set of project slugs.
     private func parseAllJSONLFiles(includedSlugs: [String]?) throws -> [UsageRecord] {
         let fm = FileManager.default
         guard fm.fileExists(atPath: claudeProjectsRoot) else {
             throw LocalFileError.directoryNotFound(claudeProjectsRoot)
         }
 
-        let allowedSlugs = includedSlugs.map { Set($0) }  // nil = allow all
+        let allowedSlugs = includedSlugs.map { Set($0) }
 
         let projectDirs: [URL]
         do {
@@ -83,9 +84,9 @@ struct LocalFileDataSource {
             throw LocalFileError.directoryNotFound(claudeProjectsRoot)
         }
 
-        // Scan each project directory for .jsonl files.
         var allRecords: [UsageRecord] = []
         for projectDir in projectDirs {
+            let slug = projectDir.lastPathComponent
             guard let enumerator = fm.enumerator(at: projectDir, includingPropertiesForKeys: nil)
             else { continue }
 
@@ -94,14 +95,16 @@ struct LocalFileDataSource {
                 if fileURL.pathExtension == "jsonl" { jsonlFiles.append(fileURL) }
             }
             for fileURL in jsonlFiles {
-                allRecords.append(contentsOf: (try? parseJSONLFile(at: fileURL)) ?? [])
+                // Tag each record with the project slug so we can group by project later
+                let fileRecords = (try? parseJSONLFile(at: fileURL, projectSlug: slug)) ?? []
+                allRecords.append(contentsOf: fileRecords)
             }
         }
 
         return allRecords
     }
 
-    private func parseJSONLFile(at url: URL) throws -> [UsageRecord] {
+    private func parseJSONLFile(at url: URL, projectSlug: String) throws -> [UsageRecord] {
         guard let fileHandle = FileHandle(forReadingAtPath: url.path) else { return [] }
         defer { fileHandle.closeFile() }
 
@@ -122,6 +125,7 @@ struct LocalFileDataSource {
 
             records.append(UsageRecord(
                 timestamp: timestamp,
+                projectSlug: projectSlug,
                 model: raw.message?.model ?? "unknown",
                 usage: TokenUsage(
                     inputTokens:         usage.input_tokens,
@@ -133,12 +137,19 @@ struct LocalFileDataSource {
         }
         return records
     }
+
+    private func startOfCurrentMonth() -> Date {
+        Calendar.current.date(
+            from: Calendar.current.dateComponents([.year, .month], from: Date())
+        )!
+    }
 }
 
 // MARK: - Internal types
 
 private struct UsageRecord {
     let timestamp: Date
+    let projectSlug: String
     let model: String
     let usage: TokenUsage
 }

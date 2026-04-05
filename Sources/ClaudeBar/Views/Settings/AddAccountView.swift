@@ -15,6 +15,7 @@ struct AddAccountView: View {
     @State private var name: String = ""
     @State private var apiKey: String = ""
     @State private var customPath: String = ""
+    @State private var monthlyBudget: String = ""  // entered as a dollar string, e.g. "20"
     @State private var saveError: String? = nil
 
     var body: some View {
@@ -91,6 +92,19 @@ struct AddAccountView: View {
             switch type {
             case .claudeCode:
                 Section {
+                    HStack {
+                        Text("$")
+                            .foregroundStyle(.secondary)
+                        TextField("Monthly budget", text: $monthlyBudget, prompt: Text("e.g. 20"))
+                    }
+                } header: {
+                    Text("Monthly spend limit (optional)")
+                } footer: {
+                    Text("Set a dollar amount to track spending against. Use your subscription cost (e.g. $20 for Pro, $100 for Max) or any budget that makes sense to you. Leave blank to skip budget tracking.")
+                        .font(.caption)
+                }
+
+                Section {
                     TextField(
                         "Path filter (optional)",
                         text: $customPath,
@@ -99,7 +113,7 @@ struct AddAccountView: View {
                 } header: {
                     Text("Limit to projects in this folder")
                 } footer: {
-                    Text("Optional. Enter a directory path (e.g. /Users/you/dev) to only count sessions from projects inside that folder. Useful if you want separate accounts for personal and work usage. Leave blank to count all local Claude Code sessions.")
+                    Text("Optional. Only count sessions from projects inside a specific folder. Leave blank to count all local Claude Code sessions.")
                         .font(.caption)
                 }
 
@@ -142,10 +156,12 @@ struct AddAccountView: View {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         let path = customPath.trimmingCharacters(in: .whitespaces)
 
+        let budget = Double(monthlyBudget.trimmingCharacters(in: .whitespaces))
         let account = Account(
             name: trimmedName,
             type: type,
-            pathFilter: path.isEmpty ? nil : path
+            pathFilter: path.isEmpty ? nil : path,
+            monthlyBudgetUSD: budget
         )
 
         // Save the API key to Keychain before handing off the account

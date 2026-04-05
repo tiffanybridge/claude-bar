@@ -51,7 +51,7 @@ struct LocalFileDataSource {
             lastActivity: lastActivity,
             modelBreakdown: modelBreakdown,
             projectBreakdown: projectBreakdown,
-            estimatedCostUSD: TokenCostEstimator.estimateTotal(modelBreakdown),
+            estimatedCostUSD: TokenCostEstimator.estimateTotal(modelBreakdown) * account.costMultiplier,
             refreshedAt: now
         )
     }

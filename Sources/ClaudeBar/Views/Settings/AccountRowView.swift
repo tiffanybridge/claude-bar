@@ -3,7 +3,10 @@ import SwiftUI
 // A single row in the Settings account list.
 struct AccountRowView: View {
     @EnvironmentObject var accountStore: AccountStore
+    @EnvironmentObject var appState: AppState
     let account: Account
+
+    @State private var showingEdit = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -22,6 +25,11 @@ struct AccountRowView: View {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
+                if account.type == .claudeCode && account.costMultiplier != 1.0 {
+                    Text(String(format: "%.2f× pricing adjustment", account.costMultiplier))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
             }
 
             Spacer()
@@ -34,6 +42,16 @@ struct AccountRowView: View {
                     .foregroundStyle(hasKey ? .green : .red)
             }
 
+            // Edit button
+            Button {
+                showingEdit = true
+            } label: {
+                Image(systemName: "pencil")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Edit account")
+
             // Delete button
             Button(role: .destructive) {
                 accountStore.remove(account)
@@ -45,5 +63,11 @@ struct AccountRowView: View {
             .help("Remove account")
         }
         .padding(.vertical, 4)
+        .sheet(isPresented: $showingEdit) {
+            EditAccountView(account: account) { updated in
+                accountStore.update(updated)
+                Task { await appState.fetchSingle(updated) }
+            }
+        }
     }
 }

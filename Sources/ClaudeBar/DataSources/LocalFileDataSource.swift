@@ -87,15 +87,16 @@ struct LocalFileDataSource {
         var allRecords: [UsageRecord] = []
         for projectDir in projectDirs {
             let slug = projectDir.lastPathComponent
-            guard let enumerator = fm.enumerator(at: projectDir, includingPropertiesForKeys: nil)
-            else { continue }
+            // Only read JSONL files directly inside the project directory.
+            // Subdirectories (e.g. [session-uuid]/subagents/) contain the internal
+            // API calls Claude makes when running agents — counting those alongside
+            // the top-level session files inflates totals significantly.
+            let topLevelFiles = (try? fm.contentsOfDirectory(
+                at: projectDir,
+                includingPropertiesForKeys: nil
+            )) ?? []
 
-            var jsonlFiles: [URL] = []
-            for case let fileURL as URL in enumerator {
-                if fileURL.pathExtension == "jsonl" { jsonlFiles.append(fileURL) }
-            }
-            for fileURL in jsonlFiles {
-                // Tag each record with the project slug so we can group by project later
+            for fileURL in topLevelFiles where fileURL.pathExtension == "jsonl" {
                 let fileRecords = (try? parseJSONLFile(at: fileURL, projectSlug: slug)) ?? []
                 allRecords.append(contentsOf: fileRecords)
             }

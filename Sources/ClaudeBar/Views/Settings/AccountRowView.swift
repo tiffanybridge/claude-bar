@@ -17,8 +17,8 @@ struct AccountRowView: View {
                 Text(account.type.displayName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if let filter = account.pathFilter {
-                    Text("Filter: \(filter)")
+                if let slugs = account.includedProjectSlugs {
+                    Text("\(slugs.count) project\(slugs.count == 1 ? "" : "s") selected")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }

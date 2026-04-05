@@ -92,14 +92,14 @@ struct AddAccountView: View {
             case .claudeCode:
                 Section {
                     TextField(
-                        "Custom path (optional)",
+                        "Path filter (optional)",
                         text: $customPath,
-                        prompt: Text("~/.claude/projects")
+                        prompt: Text("/Users/you/dev")
                     )
                 } header: {
-                    Text("Claude projects folder")
+                    Text("Limit to projects in this folder")
                 } footer: {
-                    Text("Leave blank to use the default ~/.claude/projects location.")
+                    Text("Optional. Enter a directory path (e.g. /Users/you/dev) to only count sessions from projects inside that folder. Useful if you want separate accounts for personal and work usage. Leave blank to count all local Claude Code sessions.")
                         .font(.caption)
                 }
 
@@ -145,7 +145,7 @@ struct AddAccountView: View {
         let account = Account(
             name: trimmedName,
             type: type,
-            customPath: path.isEmpty ? nil : path
+            pathFilter: path.isEmpty ? nil : path
         )
 
         // Save the API key to Keychain before handing off the account
@@ -172,11 +172,11 @@ struct AddAccountView: View {
     private func typeDescription(_ type: AccountType) -> String {
         switch type {
         case .claudeCode:
-            return "Reads ~/.claude/ usage logs. No API key needed."
+            return "Reads local ~/.claude/ logs. No API key. Filter by folder to separate personal and work."
         case .anthropicAPI:
             return "Tracks API token costs. Requires an Admin API key."
         case .enterprise:
-            return "Tracks spending vs. limits. Requires an Enterprise Admin key."
+            return "Tracks org spend vs. limits. Requires org Owner or Admin access."
         }
     }
 }

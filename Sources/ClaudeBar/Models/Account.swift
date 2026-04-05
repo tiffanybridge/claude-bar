@@ -35,16 +35,10 @@ struct Account: Identifiable, Codable, Equatable {
     // When set, only sessions from projects inside this directory are counted.
     var pathFilter: String?
 
-    // Optional monthly spend limit in USD. When set, the UI shows current
-    // estimated spend as a percentage of this budget.
-    // Example: $20 for a Claude Pro subscription, or whatever your monthly allowance is.
-    var monthlyBudgetUSD: Double?
-
-    init(name: String, type: AccountType, pathFilter: String? = nil, monthlyBudgetUSD: Double? = nil) {
+    init(name: String, type: AccountType, pathFilter: String? = nil) {
         self.id = UUID()
         self.name = name
         self.type = type
         self.pathFilter = pathFilter
-        self.monthlyBudgetUSD = monthlyBudgetUSD
     }
 }

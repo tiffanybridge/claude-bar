@@ -12,6 +12,7 @@ struct AddAccountView: View {
     @State private var name: String = ""
     @State private var apiKey: String = ""
     @State private var monthlyBudget: String = ""
+    @State private var costMultiplier: String = "1.0"
     @State private var selectedSlugs: Set<String> = Set(ProjectDiscovery.allSlugs())
     @State private var filterProjects: Bool = false
     @State private var saveError: String? = nil
@@ -101,6 +102,16 @@ struct AddAccountView: View {
                         .font(.caption)
                 }
 
+                // Pricing adjustment multiplier
+                Section {
+                    TextField("Multiplier", text: $costMultiplier, prompt: Text("1.0"))
+                } header: {
+                    Text("Pricing adjustment (optional)")
+                } footer: {
+                    Text("Leave at 1.0 to use retail pricing. If your actual spend is lower (e.g. Enterprise discount), enter a ratio. Example: if ClaudeBar estimates $58 but you actually spent $34, enter 0.59.")
+                        .font(.caption)
+                }
+
                 // Project selection
                 Section {
                     Toggle("Limit to specific projects", isOn: $filterProjects)
@@ -157,6 +168,7 @@ struct AddAccountView: View {
         saveError = nil
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         let budget = Double(monthlyBudget.trimmingCharacters(in: .whitespaces))
+        let multiplier = Double(costMultiplier.trimmingCharacters(in: .whitespaces)) ?? 1.0
         let slugs: [String]? = (type == .claudeCode && filterProjects)
             ? Array(selectedSlugs)
             : nil
@@ -165,7 +177,8 @@ struct AddAccountView: View {
             name: trimmedName,
             type: type,
             includedProjectSlugs: slugs,
-            monthlyBudgetUSD: (type == .claudeCode) ? budget : nil
+            monthlyBudgetUSD: (type == .claudeCode) ? budget : nil,
+            costMultiplier: (type == .claudeCode) ? max(0.01, multiplier) : 1.0
         )
 
         if type != .claudeCode {

@@ -5,7 +5,7 @@ import SwiftUI
 struct MenuBarView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var accountStore: AccountStore
-    @Environment(\.openWindow) private var openWindow
+    @EnvironmentObject var settingsManager: SettingsWindowManager
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,9 +26,7 @@ struct MenuBarView: View {
                     .help("Refresh all accounts")
                 }
                 Button {
-                    openWindow(id: "settings")
-                    // Bring the settings window to front
-                    NSApp.activate(ignoringOtherApps: true)
+                    settingsManager.open(appState: appState, accountStore: accountStore)
                 } label: {
                     Image(systemName: "gear")
                 }

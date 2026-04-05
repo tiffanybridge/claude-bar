@@ -1,39 +1,101 @@
 import SwiftUI
 
-// Detail rows for a Claude Code / Pro account.
-// Shows rolling usage windows and estimated cost.
+// Detail rows for a Claude Code account.
+// Shows rolling usage windows, estimated cost, and an optional budget bar.
 struct LocalUsageView: View {
     let usage: LocalFileUsage
+    var monthlyBudget: Double?  // nil = no budget configured
+
+    // How far through the current calendar month we are (0.0 – 1.0)
+    private var monthElapsedFraction: Double {
+        let cal = Calendar.current
+        let now = Date()
+        let start = cal.date(from: cal.dateComponents([.year, .month], from: now))!
+        let end   = cal.date(byAdding: .month, value: 1, to: start)!
+        let total = end.timeIntervalSince(start)
+        let elapsed = now.timeIntervalSince(start)
+        return min(elapsed / total, 1.0)
+    }
+
+    private var spendFraction: Double? {
+        guard let budget = monthlyBudget, budget > 0 else { return nil }
+        return min(usage.estimatedCostUSD / budget, 1.0)
+    }
+
+    private var isAheadOfPace: Bool {
+        guard let sf = spendFraction else { return false }
+        return sf > monthElapsedFraction
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // 5-hour window — the Claude Pro rate-limit window
+
+            // Budget section — only shown when a budget is configured
+            if let budget = monthlyBudget {
+                let sf = spendFraction ?? 0
+                let paceColor: Color = isAheadOfPace ? .orange : .accentColor
+
+                UsageRow(
+                    label: "This month",
+                    value: "\(TokenCostEstimator.formatUSD(usage.estimatedCostUSD)) / \(TokenCostEstimator.formatUSD(budget))"
+                )
+
+                HStack(spacing: 4) {
+                    Text("Spend")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 38, alignment: .leading)
+                    UsageBar(value: sf, tint: paceColor)
+                    Text(String(format: "%.0f%%", sf * 100))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 30, alignment: .trailing)
+                }
+
+                HStack(spacing: 4) {
+                    Text("Month")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 38, alignment: .leading)
+                    UsageBar(value: monthElapsedFraction, tint: .secondary)
+                    Text(String(format: "%.0f%%", monthElapsedFraction * 100))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 30, alignment: .trailing)
+                }
+
+                HStack(spacing: 4) {
+                    Image(systemName: isAheadOfPace ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                        .foregroundStyle(isAheadOfPace ? .orange : .green)
+                        .font(.caption2)
+                    Text(isAheadOfPace ? "Ahead of pace" : "On track")
+                        .font(.caption2)
+                        .foregroundStyle(isAheadOfPace ? .orange : .secondary)
+                }
+
+                Divider().padding(.vertical, 2)
+            }
+
+            // Token windows
             UsageRow(
                 label: "Last 5 hours",
                 value: usage.last5Hours.formattedTotal + " tokens",
                 subtitle: resetSubtitle
             )
-
-            UsageBar(
-                value: last5HourFraction,
-                tint: last5HourFraction > 0.85 ? .red : .accentColor
-            )
-
-            // 7-day window
             UsageRow(
                 label: "Last 7 days",
                 value: usage.last7Days.formattedTotal + " tokens"
             )
 
-            // Estimated cost
-            if usage.estimatedCostUSD > 0 {
+            // Cost (only shown when no budget is set, to avoid repetition)
+            if monthlyBudget == nil && usage.estimatedCostUSD > 0 {
                 UsageRow(
                     label: "Est. cost (7 days)",
                     value: TokenCostEstimator.formatUSD(usage.estimatedCostUSD)
                 )
             }
 
-            // Model breakdown (collapsed to top model to save space)
+            // Top model
             if let topModel = topModel {
                 UsageRow(
                     label: "Top model",
@@ -42,16 +104,6 @@ struct LocalUsageView: View {
                 )
             }
         }
-    }
-
-    // The fraction of the 5-hour window used. Approximation: we compare
-    // the 5-hour token count against the 7-day average per 5-hour window.
-    private var last5HourFraction: Double {
-        let avg = usage.last7Days.total > 0
-            ? Double(usage.last7Days.total) / (7 * 24 / 5)  // avg per 5h period over 7 days
-            : 0
-        guard avg > 0 else { return min(Double(usage.last5Hours.total) / 50_000, 1.0) }
-        return min(Double(usage.last5Hours.total) / avg, 1.0)
     }
 
     private var resetSubtitle: String? {
@@ -66,9 +118,8 @@ struct LocalUsageView: View {
     }
 }
 
-// MARK: - Reusable sub-components
+// MARK: - Reusable sub-components (shared with other usage views)
 
-// A label + value row, with an optional smaller subtitle below the value.
 struct UsageRow: View {
     let label: String
     let value: String
@@ -94,9 +145,8 @@ struct UsageRow: View {
     }
 }
 
-// A thin horizontal progress bar.
 struct UsageBar: View {
-    let value: Double   // 0.0 – 1.0
+    let value: Double
     var tint: Color = .accentColor
 
     var body: some View {

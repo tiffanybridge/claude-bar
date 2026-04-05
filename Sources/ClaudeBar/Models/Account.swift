@@ -33,14 +33,18 @@ struct Account: Identifiable, Codable, Equatable {
 
     // Optional path filter for claudeCode accounts.
     // When set, only sessions from projects inside this directory are counted.
-    // Example: "/Users/you/dev" counts only projects in ~/dev/
-    // Leave nil to count all local Claude Code sessions.
     var pathFilter: String?
 
-    init(name: String, type: AccountType, pathFilter: String? = nil) {
+    // Optional monthly spend limit in USD. When set, the UI shows current
+    // estimated spend as a percentage of this budget.
+    // Example: $20 for a Claude Pro subscription, or whatever your monthly allowance is.
+    var monthlyBudgetUSD: Double?
+
+    init(name: String, type: AccountType, pathFilter: String? = nil, monthlyBudgetUSD: Double? = nil) {
         self.id = UUID()
         self.name = name
         self.type = type
         self.pathFilter = pathFilter
+        self.monthlyBudgetUSD = monthlyBudgetUSD
     }
 }

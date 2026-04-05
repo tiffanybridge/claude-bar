@@ -3,7 +3,8 @@ import SwiftUI
 // Shown when no accounts have been configured yet.
 struct EmptyStateView: View {
     @EnvironmentObject var appState: AppState
-    @Environment(\.openWindow) private var openWindow
+    @EnvironmentObject var accountStore: AccountStore
+    @EnvironmentObject var settingsManager: SettingsWindowManager
 
     var body: some View {
         VStack(spacing: 12) {
@@ -21,8 +22,7 @@ struct EmptyStateView: View {
                 .multilineTextAlignment(.center)
 
             Button("Add Account") {
-                openWindow(id: "settings")
-                NSApp.activate(ignoringOtherApps: true)
+                settingsManager.open(appState: appState, accountStore: accountStore)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)

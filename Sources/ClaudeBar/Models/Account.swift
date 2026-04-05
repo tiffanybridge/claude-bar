@@ -1,7 +1,5 @@
 import Foundation
 
-// The three types of Claude accounts this app can track.
-// Each type pulls data from a different source.
 enum AccountType: String, Codable, CaseIterable {
     case claudeCode = "claude_code"
     case anthropicAPI = "anthropic_api"
@@ -24,21 +22,27 @@ enum AccountType: String, Codable, CaseIterable {
     }
 }
 
-// One configured account. Stored in UserDefaults.
-// Secrets (API keys) are stored separately in the Keychain, referenced by `id`.
 struct Account: Identifiable, Codable, Equatable {
     let id: UUID
-    var name: String          // User-chosen label, e.g. "Personal", "Work"
+    var name: String
     var type: AccountType
 
-    // Optional path filter for claudeCode accounts.
-    // When set, only sessions from projects inside this directory are counted.
-    var pathFilter: String?
+    // claudeCode only: if set, only sessions from these project slugs are counted.
+    // nil means include all projects.
+    var includedProjectSlugs: [String]?
 
-    init(name: String, type: AccountType, pathFilter: String? = nil) {
+    // claudeCode only: optional monthly spend limit in USD.
+    // Meaningful for Enterprise-billed usage (e.g. $200/month allowance).
+    // Leave nil for Pro accounts where flat-rate applies.
+    var monthlyBudgetUSD: Double?
+
+    init(name: String, type: AccountType,
+         includedProjectSlugs: [String]? = nil,
+         monthlyBudgetUSD: Double? = nil) {
         self.id = UUID()
         self.name = name
         self.type = type
-        self.pathFilter = pathFilter
+        self.includedProjectSlugs = includedProjectSlugs
+        self.monthlyBudgetUSD = monthlyBudgetUSD
     }
 }

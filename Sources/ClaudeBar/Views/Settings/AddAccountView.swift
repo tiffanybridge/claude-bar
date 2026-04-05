@@ -2,20 +2,19 @@ import SwiftUI
 
 // A two-step sheet for adding a new account.
 // Step 1: choose the account type.
-// Step 2: fill in the details (name, API key, etc.).
+// Step 2: fill in the details.
 struct AddAccountView: View {
     var onSave: (Account) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
-    // Step tracking: nil = type picker, non-nil = detail form for chosen type
     @State private var selectedType: AccountType? = nil
-
-    // Shared form fields
     @State private var name: String = ""
     @State private var apiKey: String = ""
-    @State private var customPath: String = ""
-@State private var saveError: String? = nil
+    @State private var monthlyBudget: String = ""
+    @State private var selectedSlugs: Set<String> = Set(ProjectDiscovery.allSlugs())
+    @State private var filterProjects: Bool = false
+    @State private var saveError: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -41,7 +40,7 @@ struct AddAccountView: View {
                     }
             }
         }
-        .frame(minWidth: 380, minHeight: 260)
+        .frame(minWidth: 420, minHeight: 300)
     }
 
     // MARK: - Step 1: Type picker
@@ -50,7 +49,6 @@ struct AddAccountView: View {
         List {
             ForEach(AccountType.allCases, id: \.self) { type in
                 Button {
-                    // Pre-fill the name with a sensible default
                     name = type.displayName
                     selectedType = type
                 } label: {
@@ -84,23 +82,41 @@ struct AddAccountView: View {
     @ViewBuilder
     private func detailForm(for type: AccountType) -> some View {
         Form {
-            Section("Account details") {
-                TextField("Name", text: $name, prompt: Text("e.g. My Personal Account"))
+            Section("Account name") {
+                TextField("Name", text: $name, prompt: Text("e.g. Work, Personal"))
             }
 
             switch type {
             case .claudeCode:
+                // Monthly budget — optional, intended for Enterprise-billed usage
                 Section {
-                    TextField(
-                        "Path filter (optional)",
-                        text: $customPath,
-                        prompt: Text("/Users/you/dev")
-                    )
+                    HStack {
+                        Text("$").foregroundStyle(.secondary)
+                        TextField("Amount", text: $monthlyBudget, prompt: Text("e.g. 200"))
+                    }
                 } header: {
-                    Text("Limit to projects in this folder")
+                    Text("Monthly spend limit (optional)")
                 } footer: {
-                    Text("Optional. Only count sessions from projects inside a specific folder. Leave blank to count all local Claude Code sessions.")
+                    Text("Set this if your Claude Code usage is billed to an Enterprise account with a monthly allowance. Leave blank for flat-rate Pro accounts.")
                         .font(.caption)
+                }
+
+                // Project selection
+                Section {
+                    Toggle("Limit to specific projects", isOn: $filterProjects)
+                    if filterProjects {
+                        ProjectPickerView(selectedSlugs: $selectedSlugs)
+                    }
+                } header: {
+                    Text("Projects")
+                } footer: {
+                    if filterProjects {
+                        Text("Only sessions from selected projects will count toward this account. Use this to separate work and personal usage.")
+                            .font(.caption)
+                    } else {
+                        Text("All local Claude Code sessions will be included.")
+                            .font(.caption)
+                    }
                 }
 
             case .anthropicAPI:
@@ -109,7 +125,7 @@ struct AddAccountView: View {
                 } header: {
                     Text("Anthropic Admin API key")
                 } footer: {
-                    Text("Create an Admin API key at console.anthropic.com/settings/admin-keys.")
+                    Text("Create one at console.anthropic.com/settings/admin-keys.")
                         .font(.caption)
                 }
 
@@ -119,7 +135,7 @@ struct AddAccountView: View {
                 } header: {
                     Text("Enterprise Admin API key")
                 } footer: {
-                    Text("Must be a Primary Owner or Admin of your Enterprise org.")
+                    Text("Requires Primary Owner or Admin role in your Enterprise org.")
                         .font(.caption)
                 }
             }
@@ -135,20 +151,23 @@ struct AddAccountView: View {
         .formStyle(.grouped)
     }
 
-    // MARK: - Save logic
+    // MARK: - Save
 
     private func save(type: AccountType) {
         saveError = nil
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
-        let path = customPath.trimmingCharacters(in: .whitespaces)
+        let budget = Double(monthlyBudget.trimmingCharacters(in: .whitespaces))
+        let slugs: [String]? = (type == .claudeCode && filterProjects)
+            ? Array(selectedSlugs)
+            : nil
 
         let account = Account(
             name: trimmedName,
             type: type,
-            pathFilter: path.isEmpty ? nil : path
+            includedProjectSlugs: slugs,
+            monthlyBudgetUSD: (type == .claudeCode) ? budget : nil
         )
 
-        // Save the API key to Keychain before handing off the account
         if type != .claudeCode {
             let trimmedKey = apiKey.trimmingCharacters(in: .whitespaces)
             guard !trimmedKey.isEmpty else {
@@ -172,7 +191,7 @@ struct AddAccountView: View {
     private func typeDescription(_ type: AccountType) -> String {
         switch type {
         case .claudeCode:
-            return "Reads local ~/.claude/ logs. No API key. Filter by folder to separate personal and work."
+            return "Reads local ~/.claude/ logs. Choose specific projects to separate work and personal."
         case .anthropicAPI:
             return "Tracks API token costs. Requires an Admin API key."
         case .enterprise:

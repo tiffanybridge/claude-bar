@@ -13,7 +13,7 @@ struct AccountSectionView: View {
             Group {
                 switch appState.usageByAccount[account.id] {
                 case .localFile(let usage):
-                    LocalUsageView(usage: usage)
+                    LocalUsageView(usage: usage, monthlyBudget: account.monthlyBudgetUSD)
                 case .apiUsage(let usage):
                     APIUsageView(usage: usage)
                 case .enterprise(let usage):

@@ -17,7 +17,7 @@ struct LocalFileDataSource {
     private let claudeProjectsRoot = NSHomeDirectory() + "/.claude/projects"
 
     func fetch(account: Account) async throws -> LocalFileUsage {
-        let records = try parseAllJSONLFiles(pathFilter: account.pathFilter)
+        let records = try parseAllJSONLFiles(includedSlugs: account.includedProjectSlugs)
 
         let now = Date()
         let cutoff5h  = TimeWindow.last5Hours(from: now)
@@ -56,20 +56,15 @@ struct LocalFileDataSource {
 
     // MARK: - Private parsing
 
-    // Returns all JSONL project directories, optionally filtered to a path prefix.
-    private func parseAllJSONLFiles(pathFilter: String?) throws -> [UsageRecord] {
+    // Scans ~/.claude/projects/, optionally limited to a specific set of project slugs.
+    private func parseAllJSONLFiles(includedSlugs: [String]?) throws -> [UsageRecord] {
         let fm = FileManager.default
         guard fm.fileExists(atPath: claudeProjectsRoot) else {
             throw LocalFileError.directoryNotFound(claudeProjectsRoot)
         }
 
-        // Convert the user-supplied path filter to the slug prefix Claude uses.
-        // "/Users/you/dev" → "-Users-you-dev"
-        let slugPrefix: String? = pathFilter.map { path in
-            path.replacingOccurrences(of: "/", with: "-")
-        }
+        let allowedSlugs = includedSlugs.map { Set($0) }  // nil = allow all
 
-        // List top-level project directories, applying the slug filter if set.
         let projectDirs: [URL]
         do {
             projectDirs = try fm.contentsOfDirectory(
@@ -79,9 +74,8 @@ struct LocalFileDataSource {
                 var isDir: ObjCBool = false
                 fm.fileExists(atPath: url.path, isDirectory: &isDir)
                 guard isDir.boolValue else { return false }
-                // If a filter is set, only include directories whose name starts with the prefix.
-                if let prefix = slugPrefix {
-                    return url.lastPathComponent.hasPrefix(prefix)
+                if let allowed = allowedSlugs {
+                    return allowed.contains(url.lastPathComponent)
                 }
                 return true
             }

@@ -1,82 +1,12 @@
 import SwiftUI
 
-// Detail rows for a Claude Code account.
-// Shows rolling usage windows, estimated cost, and an optional budget bar.
+// Detail rows for a Claude Code / Pro account.
+// Shows raw token counts for each time window and the reset countdown.
 struct LocalUsageView: View {
     let usage: LocalFileUsage
-    var monthlyBudget: Double?  // nil = no budget configured
-
-    // How far through the current calendar month we are (0.0 – 1.0)
-    private var monthElapsedFraction: Double {
-        let cal = Calendar.current
-        let now = Date()
-        let start = cal.date(from: cal.dateComponents([.year, .month], from: now))!
-        let end   = cal.date(byAdding: .month, value: 1, to: start)!
-        let total = end.timeIntervalSince(start)
-        let elapsed = now.timeIntervalSince(start)
-        return min(elapsed / total, 1.0)
-    }
-
-    private var spendFraction: Double? {
-        guard let budget = monthlyBudget, budget > 0 else { return nil }
-        return min(usage.estimatedCostUSD / budget, 1.0)
-    }
-
-    private var isAheadOfPace: Bool {
-        guard let sf = spendFraction else { return false }
-        return sf > monthElapsedFraction
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-
-            // Budget section — only shown when a budget is configured
-            if let budget = monthlyBudget {
-                let sf = spendFraction ?? 0
-                let paceColor: Color = isAheadOfPace ? .orange : .accentColor
-
-                UsageRow(
-                    label: "This month",
-                    value: "\(TokenCostEstimator.formatUSD(usage.estimatedCostUSD)) / \(TokenCostEstimator.formatUSD(budget))"
-                )
-
-                HStack(spacing: 4) {
-                    Text("Spend")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 38, alignment: .leading)
-                    UsageBar(value: sf, tint: paceColor)
-                    Text(String(format: "%.0f%%", sf * 100))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 30, alignment: .trailing)
-                }
-
-                HStack(spacing: 4) {
-                    Text("Month")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 38, alignment: .leading)
-                    UsageBar(value: monthElapsedFraction, tint: .secondary)
-                    Text(String(format: "%.0f%%", monthElapsedFraction * 100))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 30, alignment: .trailing)
-                }
-
-                HStack(spacing: 4) {
-                    Image(systemName: isAheadOfPace ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                        .foregroundStyle(isAheadOfPace ? .orange : .green)
-                        .font(.caption2)
-                    Text(isAheadOfPace ? "Ahead of pace" : "On track")
-                        .font(.caption2)
-                        .foregroundStyle(isAheadOfPace ? .orange : .secondary)
-                }
-
-                Divider().padding(.vertical, 2)
-            }
-
-            // Token windows
             UsageRow(
                 label: "Last 5 hours",
                 value: usage.last5Hours.formattedTotal + " tokens",
@@ -86,17 +16,7 @@ struct LocalUsageView: View {
                 label: "Last 7 days",
                 value: usage.last7Days.formattedTotal + " tokens"
             )
-
-            // Cost (only shown when no budget is set, to avoid repetition)
-            if monthlyBudget == nil && usage.estimatedCostUSD > 0 {
-                UsageRow(
-                    label: "Est. cost (7 days)",
-                    value: TokenCostEstimator.formatUSD(usage.estimatedCostUSD)
-                )
-            }
-
-            // Top model
-            if let topModel = topModel {
+            if let topModel {
                 UsageRow(
                     label: "Top model",
                     value: topModel.name,
@@ -118,7 +38,7 @@ struct LocalUsageView: View {
     }
 }
 
-// MARK: - Reusable sub-components (shared with other usage views)
+// MARK: - Shared sub-components (used by API and Enterprise views too)
 
 struct UsageRow: View {
     let label: String

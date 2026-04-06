@@ -8,7 +8,7 @@ enum AccountType: String, Codable, CaseIterable {
     var displayName: String {
         switch self {
         case .claudeCode:   return "Claude Code"
-        case .anthropicAPI: return "Anthropic API"
+        case .anthropicAPI: return "Anthropic Console"
         case .enterprise:   return "Enterprise (Admin)"
         }
     }

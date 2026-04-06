@@ -4,48 +4,72 @@
 #
 # Prerequisites:
 #   - Xcode command-line tools installed (xcode-select --install)
-#   - The project opened in Xcode at least once (to resolve package dependencies)
 #
 # Output: build/ClaudeBar.dmg
 
 set -euo pipefail
 
-SCHEME="ClaudeBar"
+VERSION=${GITHUB_REF_NAME:-"dev"}
 BUILD_DIR="build"
-ARCHIVE_PATH="$BUILD_DIR/ClaudeBar.xcarchive"
-EXPORT_PATH="$BUILD_DIR/export"
-DMG_PATH="$BUILD_DIR/ClaudeBar.dmg"
-EXPORT_OPTIONS="scripts/ExportOptions.plist"
+APP_NAME="ClaudeBar"
+APP_PATH="$BUILD_DIR/$APP_NAME.app"
+DMG_PATH="$BUILD_DIR/$APP_NAME.dmg"
 
 echo "==> Cleaning previous build..."
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
-echo "==> Archiving $SCHEME..."
-xcodebuild archive \
-  -scheme "$SCHEME" \
-  -archivePath "$ARCHIVE_PATH" \
-  -configuration Release \
-  -destination "platform=macOS" \
-  CODE_SIGN_IDENTITY="" \
-  CODE_SIGNING_REQUIRED=NO \
-  CODE_SIGNING_ALLOWED=NO
+echo "==> Building universal binary (arm64 + x86_64)..."
+swift build -c release --arch arm64 --arch x86_64
 
-echo "==> Exporting .app..."
-xcodebuild -exportArchive \
-  -archivePath "$ARCHIVE_PATH" \
-  -exportPath "$EXPORT_PATH" \
-  -exportOptionsPlist "$EXPORT_OPTIONS"
-
-APP_PATH="$EXPORT_PATH/ClaudeBar.app"
-if [ ! -d "$APP_PATH" ]; then
-  echo "ERROR: .app not found at $APP_PATH"
+BINARY_PATH=".build/apple/Products/Release/$APP_NAME"
+if [ ! -f "$BINARY_PATH" ]; then
+  echo "ERROR: Binary not found at $BINARY_PATH"
   exit 1
 fi
 
+echo "==> Assembling .app bundle..."
+mkdir -p "$APP_PATH/Contents/MacOS"
+mkdir -p "$APP_PATH/Contents/Resources"
+
+cp "$BINARY_PATH" "$APP_PATH/Contents/MacOS/$APP_NAME"
+
+# Write Info.plist — required for macOS to treat the binary as a GUI app.
+# LSUIElement hides ClaudeBar from the dock (it lives in the menu bar instead).
+cat > "$APP_PATH/Contents/Info.plist" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>ClaudeBar</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.claudebar.ClaudeBar</string>
+    <key>CFBundleName</key>
+    <string>ClaudeBar</string>
+    <key>CFBundleDisplayName</key>
+    <string>ClaudeBar</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$VERSION</string>
+    <key>CFBundleVersion</key>
+    <string>$VERSION</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>LSUIElement</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
 echo "==> Creating .dmg..."
 hdiutil create \
-  -volname "ClaudeBar" \
+  -volname "$APP_NAME" \
   -srcfolder "$APP_PATH" \
   -ov \
   -format UDZO \

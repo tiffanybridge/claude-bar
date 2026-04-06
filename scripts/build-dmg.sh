@@ -26,6 +26,7 @@ xcodebuild archive \
   -scheme "$SCHEME" \
   -archivePath "$ARCHIVE_PATH" \
   -configuration Release \
+  -destination "platform=macOS" \
   CODE_SIGN_IDENTITY="" \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGNING_ALLOWED=NO

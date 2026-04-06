@@ -30,12 +30,11 @@ struct LocalFileUsage {
     }
 }
 
-// Usage data fetched from the Anthropic API.
+// Usage data fetched from the Anthropic Admin API.
 struct APIUsage {
     let accountId: UUID
-    let thisMonthTokens: TokenUsage
+    let last7Days: TokenUsage
     let estimatedCostUSD: Double
-    let modelBreakdown: [String: TokenUsage]
     let refreshedAt: Date
 }
 

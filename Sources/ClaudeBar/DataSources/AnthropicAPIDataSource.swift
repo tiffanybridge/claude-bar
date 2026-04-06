@@ -1,8 +1,9 @@
 import Foundation
 
-// Fetches usage data from the Anthropic Usage & Cost API.
+// Fetches usage data from the Anthropic Usage API.
 // Requires an Admin API key (starts with "sk-ant-admin...").
-// You can create one at: https://console.anthropic.com/settings/admin-keys
+// Create one at: console.anthropic.com/settings/admin-keys
+// Note: Admin keys are only available for accounts with an Organization set up.
 struct AnthropicAPIDataSource {
 
     private let baseURL = "https://api.anthropic.com"
@@ -10,19 +11,20 @@ struct AnthropicAPIDataSource {
     func fetch(account: Account) async throws -> APIUsage {
         let adminKey = try KeychainService.retrieve(for: account.id)
 
-        // Build the request for the current calendar month
-        let (startTime, endTime) = currentMonthRange()
+        let now = Date()
+        let sevenDaysAgo = now.addingTimeInterval(-7 * 24 * 3600)
+
         var components = URLComponents(string: "\(baseURL)/v1/organizations/usage_report/messages")!
         components.queryItems = [
-            URLQueryItem(name: "start_time", value: iso8601Formatter.string(from: startTime)),
-            URLQueryItem(name: "end_time",   value: iso8601Formatter.string(from: endTime)),
-            URLQueryItem(name: "time_bucket", value: "1d")  // one data point per day
+            URLQueryItem(name: "starting_at",  value: iso8601Formatter.string(from: sevenDaysAgo)),
+            URLQueryItem(name: "ending_at",    value: iso8601Formatter.string(from: now)),
+            URLQueryItem(name: "bucket_width", value: "1d")
         ]
 
         var request = URLRequest(url: components.url!)
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        request.setValue(adminKey,     forHTTPHeaderField: "x-api-key")
-        request.setValue("application/json", forHTTPHeaderField: "accept")
+        request.setValue("2023-06-01",       forHTTPHeaderField: "anthropic-version")
+        request.setValue(adminKey,            forHTTPHeaderField: "x-api-key")
+        request.setValue("application/json",  forHTTPHeaderField: "accept")
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -35,57 +37,51 @@ struct AnthropicAPIDataSource {
         }
 
         let decoded = try JSONDecoder().decode(UsageReportResponse.self, from: data)
-        return aggregate(decoded, accountId: account.id)
+        return aggregate(decoded, accountId: account.id, refreshedAt: now)
     }
 
     // MARK: - Private helpers
 
-    private func aggregate(_ response: UsageReportResponse, accountId: UUID) -> APIUsage {
+    private func aggregate(_ response: UsageReportResponse, accountId: UUID, refreshedAt: Date) -> APIUsage {
         var totals = TokenUsage()
-        var breakdown: [String: TokenUsage] = [:]
 
-        for entry in response.data {
-            let usage = TokenUsage(
-                inputTokens:         entry.input_tokens,
-                outputTokens:        entry.output_tokens,
-                cacheCreationTokens: entry.cache_creation_input_tokens ?? 0,
-                cacheReadTokens:     entry.cache_read_input_tokens ?? 0
-            )
-            totals += usage
-            let model = entry.model ?? "unknown"
-            breakdown[model, default: TokenUsage()] += usage
+        // The API returns daily buckets; each bucket has a `results` array.
+        // Without group_by, each bucket has exactly one result entry.
+        for bucket in response.data {
+            for entry in bucket.results {
+                totals += TokenUsage(
+                    inputTokens:         entry.uncached_input_tokens,
+                    outputTokens:        entry.output_tokens,
+                    cacheCreationTokens: 0,  // not exposed at summary level
+                    cacheReadTokens:     entry.cache_read_input_tokens ?? 0
+                )
+            }
         }
 
-        let cost = TokenCostEstimator.estimateTotal(breakdown)
+        let cost = TokenCostEstimator.estimate(totals, model: "default")
         return APIUsage(
             accountId: accountId,
-            thisMonthTokens: totals,
+            last7Days: totals,
             estimatedCostUSD: cost,
-            modelBreakdown: breakdown,
-            refreshedAt: .now
+            refreshedAt: refreshedAt
         )
-    }
-
-    private func currentMonthRange() -> (Date, Date) {
-        let calendar = Calendar.current
-        let now = Date()
-        let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
-        let startOfNextMonth = calendar.date(byAdding: .month, value: 1, to: startOfMonth)!
-        return (startOfMonth, min(startOfNextMonth, now))
     }
 }
 
 // MARK: - Response shapes
 
-// The Anthropic usage report API returns a list of daily usage entries.
+// The usage report API returns daily buckets, each containing a results array.
 private struct UsageReportResponse: Decodable {
-    let data: [UsageEntry]
+    let data: [DailyBucket]
 
-    struct UsageEntry: Decodable {
-        let model: String?
-        let input_tokens: Int
+    struct DailyBucket: Decodable {
+        let starting_at: String
+        let results: [ResultEntry]
+    }
+
+    struct ResultEntry: Decodable {
+        let uncached_input_tokens: Int
         let output_tokens: Int
-        let cache_creation_input_tokens: Int?
         let cache_read_input_tokens: Int?
     }
 }
@@ -96,8 +92,10 @@ enum APIError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unexpectedResponse:       return "Received unexpected response from Anthropic API"
-        case .httpError(let code, let body): return "API error \(code): \(body)"
+        case .unexpectedResponse:
+            return "Received unexpected response from Anthropic API"
+        case .httpError(let code, let body):
+            return "API error \(code): \(body)"
         }
     }
 }

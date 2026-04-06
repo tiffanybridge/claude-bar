@@ -136,7 +136,7 @@ struct AddAccountView: View {
                 } header: {
                     Text("Anthropic Admin API key")
                 } footer: {
-                    Text("Create one at console.anthropic.com/settings/admin-keys.")
+                    Text("Requires an Admin API key, not a standard API key. Create one at console.anthropic.com/settings/admin-keys. Admin keys are only available if your account has an Organization set up.")
                         .font(.caption)
                 }
 
@@ -206,7 +206,7 @@ struct AddAccountView: View {
         case .claudeCode:
             return "Reads local ~/.claude/ logs. Choose specific projects to separate work and personal."
         case .anthropicAPI:
-            return "Tracks API token costs. Requires an Admin API key."
+            return "Shows last 7 days of token usage and estimated cost. Requires an Admin API key."
         case .enterprise:
             return "Tracks org spend vs. limits. Requires org Owner or Admin access."
         }

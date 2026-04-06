@@ -6,7 +6,7 @@ A native macOS menu bar app that shows your Claude AI usage and estimated spend 
 
 ## The Problem
 
-I use Claude Code heavily across work and personal projects, but the tools Anthropic provides don't give individual contributors visibility into their own spend. My work usage is billed against a $200/month Enterprise budget, and the only way to check it was logging into a console I don't have full access to — after the fact. I had no way to see, in the moment, which projects were driving the most cost or whether I was on track to stay within budget.
+I use Claude Code heavily across work and personal projects, but the tools Anthropic provides don't give individual contributors visibility into their own spend. My work usage is billed against a $200/month Enterprise budget, and the only way to check it is by checking a browser tab or the desktop app — after the fact. I had no way to see, in the moment, which projects were driving the most cost or whether I was on track to stay within budget.
 
 ## The Solution
 
@@ -14,15 +14,16 @@ ClaudeBar lives in your macOS menu bar and shows token usage and estimated cost 
 
 ## How to Use
 
-**Prerequisites:** macOS 13+, Xcode 14+ (to build from source)
+**Prerequisites:** macOS 13+
 
 **Setup:**
 
-1. Clone the repo and open `Package.swift` in Xcode
-2. Build and run (`Cmd+R`) — the Claude icon appears in your menu bar
-3. Click the icon, then the gear to open Settings
-4. Click "Add Account" and choose Claude Code
-5. Optionally set a monthly spend limit and select which projects to include
+1. Download the latest `ClaudeBar.dmg` from [Releases](https://github.com/tiffanybridge/claude-bar/releases)
+2. Open the DMG and drag ClaudeBar to your Applications folder
+3. Right-click the app and choose Open on first launch (required because the app is unsigned)
+4. The Claude icon appears in your menu bar — click it, then the gear to open Settings
+5. Click "Add Account" and choose Claude Code
+6. Optionally set a monthly spend limit and select which projects to include
 
 **Example:** If you have three projects billed to a work Enterprise account and two personal side projects, create two accounts — one with just the work projects and a $200 budget, one with personal projects. Both appear in the same dropdown so you can monitor them side by side.
 
@@ -50,4 +51,4 @@ Claude Code stores a local log of every session on your machine. ClaudeBar reads
 
 1. **Status icon that reflects budget health.** The menu bar icon should change color — green/yellow/red — based on spend-vs-pace, so you get a signal without opening the dropdown. That's the whole point of a menu bar app.
 2. **Daily spend sparkline.** A small chart showing spend per day this month would make it easy to spot a single expensive session versus steady background usage — two very different problems with different responses.
-3. **Installable .dmg via GitHub Actions.** Right now, building requires Xcode. A CI pipeline that packages a signed .dmg on each release tag would let anyone install it, which is what it would take to share this with teammates.
+3. **Signed and notarized build.** The current DMG is unsigned, so macOS Gatekeeper requires a right-click → Open workaround on first launch. Signing with an Apple Developer ID certificate and notarizing through Apple would remove that friction for anyone less technical.
